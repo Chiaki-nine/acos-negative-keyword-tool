@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="在浏览器本地分析亚马逊广告搜索词报告并导出否词建议表" />
+  <title>亚马逊搜索词否词建议</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="page-shell">
+    <header class="hero">
+      <div>
+        <div class="eyebrow-row">
+          <p class="eyebrow">Amazon Ads Workflow</p>
+          <span class="privacy-badge"><span class="privacy-dot"></span>浏览器本地处理</span>
+        </div>
+        <h1>搜索词报告 → 否词建议</h1>
+        <p class="subtitle">上传搜索词报告，并提供产品标题和后台 ST。系统会识别产品重点词，结合 ACOS、季节性和数据成熟度生成否词建议。</p>
+      </div>
+      <div class="hero-mark" aria-hidden="true">
+        <svg viewBox="0 0 64 64" role="img">
+          <circle cx="27" cy="27" r="13"></circle>
+          <path d="M37 37L50 50"></path>
+          <path class="trend" d="M18 30L24 24L29 28L38 19M34 19H38V23"></path>
+        </svg>
+      </div>
+    </header>
+
+    <section class="privacy-card" aria-label="隐私说明">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.8-2.9 8.2-7 10-4.1-1.8-7-5.2-7-10V6l7-3z"></path><path d="M9 12l2 2 4-5"></path></svg>
+      <div><strong>报告不会上传到服务器</strong><span>读取、分析和 Excel 导出都在当前浏览器中完成。关闭页面后，页面不会保留报告数据。</span></div>
+    </section>
+
+    <section class="upload-card" id="uploadCard">
+      <form id="uploadForm">
+        <label class="dropzone" id="dropzone">
+          <input id="reportFile" name="report" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" required />
+          <span class="upload-icon" aria-hidden="true">↑</span>
+          <span class="drop-title">拖入搜索词报告，或点击选择文件</span>
+          <span class="drop-hint">支持 Excel 搜索词报告（.xlsx / .xls）</span>
+          <span class="file-name" id="fileName">尚未选择文件</span>
+        </label>
+        <div class="context-inputs">
+          <label class="text-field">
+            <span class="field-label">产品标题</span>
+            <textarea id="productTitles" name="product_titles" rows="5" placeholder="每行粘贴一个产品标题，可填写多个标题"></textarea>
+            <span class="field-hint">用于识别品类、人群、款式、材质和功能等产品相关词。</span>
+          </label>
+          <label class="text-field">
+            <span class="field-label">产品 ST（后台 Search Terms）</span>
+            <textarea id="productSt" name="product_st" rows="5" placeholder="可按换行、逗号或分号分隔多个 ST"></textarea>
+            <span class="field-hint">标题和 ST 同时出现、或多次出现的词会优先识别为重点词。</span>
+          </label>
+        </div>
+        <p class="form-note">建议至少填写标题或 ST 中的一项。留空仍可分析，但不会启用产品词保护。</p>
+        <div class="form-actions">
+          <button class="primary-button" type="submit" id="analyzeButton">开始本地分析</button>
+          <button class="secondary-button" type="button" id="resetButton">清空</button>
+        </div>
+      </form>
+      <div class="status" id="status" aria-live="polite"></div>
+    </section>
+
+    <section class="results" id="results" hidden>
+      <div class="results-head">
+        <div>
+          <p class="eyebrow">分析结果</p>
+          <h2 id="resultTitle">否词建议</h2>
+        </div>
+        <button class="download-button" id="downloadButton" type="button">导出否词建议表</button>
+      </div>
+
+      <div class="metric-grid" id="metricGrid"></div>
+      <div class="context-panel" id="productContextPanel"></div>
+
+      <div class="note-panel">
+        <strong>判定口径</strong>
+        <span>ACOS = 广告花费 / 广告销售额。标题/ST 重点词不自动做词组否定；季节未到、天气驱动或数据不足时会暂缓否定。只有证据较充分且相关性低的词才优先建议执行。</span>
+      </div>
+
+      <div class="recommendation-grid">
+        <section class="table-card">
+          <div class="table-head"><h3>词组否定候选</h3><span class="table-caption" id="phraseCaption">高优先级及需确认项</span></div>
+          <div class="table-wrap"><table id="phraseTable"></table></div>
+        </section>
+        <section class="table-card">
+          <div class="table-head"><h3>精准否定候选</h3><span class="table-caption" id="exactCaption">按用户搜索词处理</span></div>
+          <div class="table-wrap"><table id="exactTable"></table></div>
+        </section>
+        <section class="table-card wide-card">
+          <div class="table-head"><h3>暂缓否定与观察</h3><span class="table-caption" id="protectedCaption">产品重点词、季节/天气词或数据尚未成熟</span></div>
+          <div class="table-wrap"><table id="protectedTable"></table></div>
+        </section>
+      </div>
+    </section>
+
+    <details class="method-card">
+      <summary>查看处理说明</summary>
+      <ol>
+        <li>读取报告首个工作表，自动兼容常见中英文列名并排除无搜索词的总计行。</li>
+        <li>搜索词按空格、连字符和标点拆分词根，分别统计花费、销售额、订单、点击与 ACOS。</li>
+        <li>“关键词是否否定”只绑定投放关键词；精准否定候选始终使用“用户搜索词”。</li>
+        <li>导出的工作簿包含分析总览、产品词库、词根分析、搜索词分析、否词建议和原始数据。</li>
+      </ol>
+    </details>
+
+    <footer class="footer">纯静态网页 · 无需安装 · 无需本地端口 · 数据仅在浏览器内处理</footer>
+  </main>
+  <script src="./vendor/xlsx.bundle.js"></script>
+  <script src="./analysis.js"></script>
+  <script src="./export.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
